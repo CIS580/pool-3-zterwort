@@ -9,14 +9,23 @@ var game = new Game(canvas, update, render);
 var image = new Image();
 image.src = 'assets/pool_balls.png';
 
-var stick = {x: 0, y: 0}
+var pockets = [
+  {x: 0, y: 0},
+  {x: 512, y: 0},
+  {x: 1024, y: 0},
+  {x: 0, y: 512},
+  {x: 512, y: 512},
+  {x: 1024, y: 512}
+]
+var stick = {x: 0, y: 0, power: 0, charge: false}
 var balls = []
 for(var i = 0; i < 18; i++){
   balls.push({
     position: {x: 0, y: 0},
     angle: 0,
     velocity: {x:0, y:0},
-    color: 'gray'
+    color: 'gray',
+    pocketed: false
   });
 }
 rack();
@@ -75,12 +84,29 @@ canvas.onmousemove = function(event) {
 }
 
 /**
- * Strike the cue ball with the stick
+ * Begin charging the stick
  */
 canvas.onmousedown = function(event) {
   event.preventDefault();
 
-  // TODO: strike the cue ball with cue stick
+  stick.power = 0;
+  stick.charging = true;
+}
+
+/**
+ * Strike the cue ball with the stick
+ */
+canvas.onmouseup = function(event) {
+  var direction = {
+    x: balls[15].position.x - stick.x,
+    y: balls[15].position.y - stick.y
+  }
+  var denom = direction.x * direction.x + direction.y * direction.y;
+  direction.x /= denom;
+  direction.y /= denom;
+  balls[15].velocity.x = stick.power * direction.x;
+  balls[15].velocity.y = stick.power * direction.y;
+  stick.charging = false;
 }
 
 /**
@@ -105,25 +131,51 @@ masterLoop(performance.now());
  */
 function update(elapsedTime) {
 
+  // charge cue stick
+  if(stick.charging) {
+    stick.power += 0.1 * elapsedTime;
+  }
+
   // move balls
-  balls.forEach(function(ball) {
+  balls.forEach(function(ball, index) {
     ball.position.x += elapsedTime * ball.velocity.x;
     ball.position.y += elapsedTime * ball.velocity.y;
+    // bounce off bumpers
+    if(ball.position.x < 15 || ball.position.x > 1009) {
+      ball.velocity.x = -ball.velocity.x;
+    }
+    if(ball.position.y < 15 || ball.position.y > 497) {
+      ball.velocity.y  = -ball.velocity.y;
+    }
+    // apply friction
+    ball.velocity.x *= 0.999;
+    ball.velocity.y *= 0.999;
+
+    // check for pocket collisions
+    pockets.forEach(function(pocket) {
+      var distSq = Math.pow(ball.position.x - pocket.x, 2) +
+                   Math.pow(ball.position.y - pocket.y, 2);
+      if(distSq < 25 * 25) {
+        if(index == 15) {
+          // scratch
+          ball.velocity.x = 0;
+          ball.velocity.y = 0;
+          ball.position.x = 732;
+          ball.position.y = 266;
+        } else {
+          // ball in the pocket
+          ball.pocketed = true;
+          ball.velocity.x = 0;
+          ball.velocity.y = 0;
+          ball.position.x = -50;
+        }
+      }
+    });
   });
 
-  // process collisions
-  var i, j, collisionPairs = [];
-  for(i = 0; i < 15; i++) {
-    for(j = i; j < 15; j++){
-      if(i != j &&
-        850 > Math.pow(balls[i].position.x - balls[j].position.x, 2) + Math.pow(balls[i].position.y - balls[j].position.y, 2)
-      ){
-        balls[i].color = 'red';
-        balls[j].color = 'green';
-        collisionPairs.push({a: balls[i], b: balls[j]});
-      }
-    }
-  }
+  // check for ball collisions
+  // TODO: Check for ball collisions
+  // TODO: Process ball collisions
 }
 
 /**
@@ -134,35 +186,50 @@ function update(elapsedTime) {
   * @param {CanvasRenderingContext2D} ctx the context to render to
   */
 function render(elapsedTime, ctx) {
+  // Render the table
   ctx.fillStyle = "#3F6922";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  // Render the pockets
+  ctx.fillStyle = "#333333";
+  pockets.forEach(function(pocket){
+    ctx.beginPath();
+    ctx.arc(pocket.x, pocket.y, 25, 0, 2*Math.PI);
+    ctx.fill();
+  });
+
   // Render the balls
   balls.forEach(function(ball, index) {
-    var sourceX = index % 4;
-    var sourceY = Math.floor(index / 4);
-    ctx.save();
-    ctx.translate(-15, -15);
-    ctx.rotate(ball.angle);
-    ctx.translate(ball.position.x, ball.position.y);
-    ctx.drawImage(image,
-      // Source Image
-      sourceX * 160, sourceY * 160, 160, 160,
-      // Destination Image
-      0, 0, 30, 30
-    );
-    ctx.beginPath();
-    ctx.strokeStyle = ball.color;
-    ctx.arc(15,15,15,0,2*Math.PI);
-    ctx.stroke();
-    ctx.restore();
+    if(!ball.pocketed){
+      var sourceX = index % 4;
+      var sourceY = Math.floor(index / 4);
+      ctx.save();
+      ctx.translate(-15, -15);
+      ctx.rotate(ball.angle);
+      ctx.translate(ball.position.x, ball.position.y);
+      ctx.drawImage(image,
+        // Source Image
+        sourceX * 160, sourceY * 160, 160, 160,
+        // Destination Image
+        0, 0, 30, 30
+      );
+      ctx.beginPath();
+      ctx.strokeStyle = ball.color;
+      ctx.arc(15,15,15,0,2*Math.PI);
+      ctx.stroke();
+      ctx.restore();
+    }
   });
 
   // Render the stick
   ctx.beginPath();
   ctx.moveTo(balls[15].position.x, balls[15].position.y);
   ctx.lineTo(stick.x, stick.y);
-  ctx.strokeStyle = "darkgrey";
+  if(stick.charging) {
+    ctx.strokeStyle = "red";
+  } else {
+    ctx.strokeStyle = "darkgrey";
+  }
   ctx.stroke();
   ctx.beginPath();
 }
