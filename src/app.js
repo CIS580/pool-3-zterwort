@@ -9,6 +9,7 @@ var game = new Game(canvas, update, render);
 var image = new Image();
 image.src = 'assets/pool_balls.png';
 
+var axisList = [];
 var pockets = [
   {x: 0, y: 0},
   {x: 512, y: 0},
@@ -16,18 +17,21 @@ var pockets = [
   {x: 0, y: 512},
   {x: 512, y: 512},
   {x: 1024, y: 512}
-]
-var stick = {x: 0, y: 0, power: 0, charge: false}
-var balls = []
-for(var i = 0; i < 18; i++){
+];
+var stick = {x: 0, y: 0, power: 0, charge: false};
+var balls = [];
+for(var i = 0; i < 16; i++){
   balls.push({
+    number: i,
     position: {x: 0, y: 0},
     angle: 0,
     velocity: {x:0, y:0},
     color: 'gray',
     pocketed: false
   });
+  axisList.push(balls[i]);
 }
+axisList.sort(function(a,b){return a.position.x - b.position.x});
 rack();
 
 /**
@@ -61,16 +65,16 @@ function rack() {
   balls[11].position.x = 185;
   balls[11].position.y = 314;
 
-  balls[12].position.x = 158;
-  balls[12].position.y = 206;
-  balls[5].position.x = 158;
+  balls[12].position.x = 157;
+  balls[12].position.y = 205;
+  balls[5].position.x = 157;
   balls[5].position.y = 236;
-  balls[13].position.x = 158;
+  balls[13].position.x = 157;
   balls[13].position.y = 266;
-  balls[6].position.x = 158;
+  balls[6].position.x = 157;
   balls[6].position.y = 297;
-  balls[14].position.x = 158;
-  balls[14].position.y = 327;
+  balls[14].position.x = 157;
+  balls[14].position.y = 328;
 }
 
 /**
@@ -138,6 +142,7 @@ function update(elapsedTime) {
 
   // move balls
   balls.forEach(function(ball, index) {
+    ball.color = 'gray';
     ball.position.x += elapsedTime * ball.velocity.x;
     ball.position.y += elapsedTime * ball.velocity.y;
     // bounce off bumpers
@@ -173,8 +178,73 @@ function update(elapsedTime) {
     });
   });
 
-  // check for ball collisions
-  // TODO: Check for ball collisions
+  // re-sort our axis list by x position,
+  // now that all our balls have moved.
+  axisList.sort(function(a,b){return a.position.x - b.position.x});
+
+  // The active list will hold all balls
+  // we are currently considering for collisions
+  var active = [];
+
+  // The potentially colliding list will hold
+  // all pairs of balls that overlap in the x-axis,
+  // and therefore potentially collide
+  var potentiallyColliding = [];
+
+  // For each ball in the axis list, we consider it
+  // in order
+  axisList.forEach(function(ball, aindex){
+    // remove balls from the active list that are
+    // too far away from our current ball to collide
+    // The Array.prototype.filter() method will return
+    // an array containing only elements for which the
+    // provided function's return value was true -
+    // in this case, all balls that are closer than 30
+    // units to our current ball on the x-axis
+    active = active.filter(function(oball){
+      return ball.position.x - oball.position.x  < 30;
+    });
+    // Since only balls within colliding distance of
+    // our current ball are left in the active list,
+    // we pair them with the current ball and add
+    // them to the potentiallyColliding array.
+    active.forEach(function(oball, bindex){
+      potentiallyColliding.push({a: oball, b: ball});
+    });
+    // Finally, we add our current ball to the active
+    // array to consider it in the next pass down the
+    // axisList
+    active.push(ball);
+  });
+
+  // At this point we have a potentaillyColliding array
+  // containing all pairs overlapping in the x-axis.  Now
+  // we want to check for REAL collisions between these pairs.
+  // We'll store those in our collisions array.
+  var collisions = [];
+  potentiallyColliding.forEach(function(pair){
+    // Calculate the distance between balls; we'll keep
+    // this as the squared distance, as we just need to
+    // compare it to a distance equal to the radius of
+    // both balls summed.  Squaring this second value
+    // is less computationally expensive than taking
+    // the square root to get the actual distance.
+    // In fact, we can cheat a bit more and use a constant
+    // for the sum of radii, as we know the radius of our
+    // balls won't change.
+    var distSquared =
+      Math.pow(pair.a.position.x - pair.b.position.x, 2) +
+      Math.pow(pair.a.position.y - pair.b.position.y, 2);
+    // (15 + 15)^2 = 900 -> sum of two balls' raidius squared
+    if(distSquared < 900) {
+      // Color the collision pair for visual debugging
+      pair.a.color = 'red';
+      pair.b.color = 'green';
+      // Push the colliding pair into our collisions array
+      collisions.push(pair);
+    }
+  });
+
   // TODO: Process ball collisions
 }
 
